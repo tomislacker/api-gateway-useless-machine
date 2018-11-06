@@ -1,0 +1,127 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Useless Machine
+
+Globals:
+  Function:
+    Runtime: python3.6
+    MemorySize: 128
+    Timeout: 30
+
+Resources:
+  Api:
+    Type: AWS::Serverless::Api
+    Properties:
+        StageName: useless
+        DefinitionBody:
+            swagger: 2.0
+            info:
+              title:
+                Ref: AWS::StackName
+            paths:
+              /:
+                get:
+                  x-amazon-apigateway-integration:
+                    httpMethod: POST
+                    type: aws_proxy
+                    uri:
+                      Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${Function.Arn}/invocations
+                  produces:
+                    - image/gif
+                  summary: "Trigger the useless machine"
+                  responses:
+                    '200':
+                      description: OK
+    
+  FunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${Function}
+      RetentionInDays: 1
+
+  FunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - sts:AssumeRole
+            Principal:
+              Service:
+                - apigateway.amazonaws.com
+                - lambda.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      Policies:
+        - PolicyName: useless
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - cloudformation:DeleteStack
+                Resource: !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AWS::StackName}/*
+              - Effect: Allow
+                Action:
+                  - apigateway:DELETE
+                  - iam:DeleteRole
+                  - iam:DeleteRolePolicy
+                  - iam:DetachRolePolicy
+                  - lambda:Delete*
+                  - lambda:Remove*
+                  - logs:DeleteLogGroup
+                Resource: '*'
+
+  Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      InlineCode: !Sub |
+        import base64
+        import boto3
+        import logging
+        import urllib.request
+
+        cfn = boto3.client('cloudformation')
+
+        def handler(event, context):
+            logging.info('Uh oh...')
+
+            logging.warning('Deleting stack...')
+            try:
+                cfn.delete_stack(StackName='${AWS::StackName}')
+            except Exception as e:
+                print('Exception!')
+                logging.critical('Exception!', exc_info=True)
+
+            return {
+                'statusCode': 302,
+                'headers': {
+                  'Location': 'https://media.giphy.com/media/Eb4HAUeQrq608/giphy.gif',
+                },
+            }
+
+      Handler: index.handler
+      Events:
+        GetApi:
+          Type: Api
+          Properties:
+            Path: /
+            Method: GET
+            RestApiId: !Ref Api
+      Role: !GetAtt FunctionRole.Arn
+
+Outputs:
+  UselessURL:
+    Description: URL
+    Value: !Sub https://${Api}.execute-api.${AWS::Region}.amazonaws.com/useless/
+
+# vim: ft=yaml.cloudformation sw=2 ts=2
